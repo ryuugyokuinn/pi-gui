@@ -5,6 +5,7 @@ import {
   DefaultPackageManager,
   DefaultResourceLoader,
   ModelRuntime,
+  type PackageInstallFailure,
   type PackageSource,
   SettingsManager,
   parseFrontmatter,
@@ -537,6 +538,22 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
       agentDir: this.agentDir,
       settingsManager,
       builtinExtensions: [...PI_ADDON_EXTENSION_NAMES],
+      // Electron has no terminal: capture git/npm output so a failed install reports why, and so
+      // git and ssh fail instead of waiting on a credential prompt nobody can answer.
+      commandOutput: "capture",
+    });
+  }
+
+  private createResourceLoader(
+    cwd: string,
+    settingsManager: SettingsManager,
+  ): DefaultResourceLoader {
+    return new DefaultResourceLoader({
+      cwd,
+      agentDir: this.agentDir,
+      settingsManager,
+      extensionFactories: this.inventoryExtensionFactories(),
+      packageCommandOutput: "capture",
     });
   }
 
@@ -548,12 +565,7 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
 
     let settingsManager = SettingsManager.create(workspace.path, this.agentDir);
     let packageManager = this.createPackageManager(workspace.path, settingsManager);
-    let resourceLoader = new DefaultResourceLoader({
-      cwd: workspace.path,
-      agentDir: this.agentDir,
-      settingsManager,
-      extensionFactories: this.inventoryExtensionFactories(),
-    });
+    let resourceLoader = this.createResourceLoader(workspace.path, settingsManager);
     try {
       await resourceLoader.reload();
     } catch (error) {
@@ -574,12 +586,7 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
 
       settingsManager = fallbackSettingsManager;
       packageManager = this.createPackageManager(workspace.path, settingsManager);
-      resourceLoader = new DefaultResourceLoader({
-        cwd: workspace.path,
-        agentDir: this.agentDir,
-        settingsManager,
-        extensionFactories: this.inventoryExtensionFactories(),
-      });
+      resourceLoader = this.createResourceLoader(workspace.path, settingsManager);
       await resourceLoader.reload();
     }
 
@@ -715,7 +722,7 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
     const resolvedPaths = await this.resolveRuntimePaths(context);
     const [skills, extensions, providers, models] = await Promise.all([
       this.buildSkillRecords(context, resolvedPaths.skills),
-      this.buildExtensionRecords(context, resolvedPaths.extensions),
+      this.buildExtensionRecords(context, resolvedPaths.extensions, resolvedPaths.installFailures),
       this.buildProviderRecords(context),
       this.buildModelRecords(context),
     ]);
@@ -926,6 +933,7 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
   private async buildExtensionRecords(
     context: RuntimeContext,
     resolvedExtensions: readonly ResolvedResource[],
+    installFailures: readonly PackageInstallFailure[] = [],
   ): Promise<readonly RuntimeExtensionRecord[]> {
     const loadedResult = context.resourceLoader.getExtensions();
     const packageMetadataCache = new Map<string, Promise<PackageMetadata>>();
@@ -945,6 +953,27 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
         path: error.path,
       });
       diagnosticsByPath.set(extensionPathKey(error.path), diagnostics);
+    }
+
+    // pi 1.6 skips a package that fails to install instead of throwing, and reports it only in
+    // `installFailures` and these warnings. Its install warnings (keyed by package source, not a
+    // file path) are covered by `installFailures`; the rest name an extension file or a package.json
+    // inside a package root.
+    const installFailureSources = new Set(installFailures.map((failure) => failure.source));
+    const warningsByPackageRoot = new Map<string, RuntimeExtensionDiagnostic[]>();
+    for (const warning of loadedResult.warnings ?? []) {
+      if (installFailureSources.has(warning.path)) {
+        continue;
+      }
+      const diagnostic: RuntimeExtensionDiagnostic = {
+        type: "warning",
+        message: warning.warning,
+        path: warning.path,
+      };
+      const byPackageRoot = basename(warning.path) === "package.json";
+      const target = byPackageRoot ? warningsByPackageRoot : diagnosticsByPath;
+      const key = extensionPathKey(byPackageRoot ? dirname(warning.path) : warning.path);
+      target.set(key, [...(target.get(key) ?? []), diagnostic]);
     }
 
     const records = await Promise.all(
@@ -971,10 +1000,16 @@ export class RuntimeSupervisor implements RuntimeResourceDriver {
           shortcuts: loaded
             ? [...loaded.shortcuts.keys()].sort((left, right) => left.localeCompare(right))
             : [],
-          diagnostics: diagnosticsByPath.get(path) ?? [],
+          diagnostics: [
+            ...(diagnosticsByPath.get(path) ?? []),
+            ...(resource.metadata.packageRoot
+              ? (warningsByPackageRoot.get(extensionPathKey(resource.metadata.packageRoot)) ?? [])
+              : []),
+          ],
         };
       }),
     );
+    records.push(...buildInstallFailureRecords(installFailures));
     const resolvedRecordPaths = new Set(records.map((record) => extensionPathKey(record.path)));
     const inlineRecords = loadedResult.extensions
       .filter(
@@ -1149,6 +1184,54 @@ function isCodemodeToolEntry(entry: string): boolean {
 }
 
 /** `builtin:<name>` names one of pi's add-ons, not a file, so it is compared as is. */
+/**
+ * One record per package pi skipped because installing it failed, so the failure shows in the
+ * Extensions list instead of the package silently vanishing.
+ *
+ * The record is `temporary`-scoped on purpose: there is no extension file to toggle or open, and
+ * the desktop only offers those for `user`/`project` records. The real scope is in the message.
+ * `installFailed` marks the record as not enableable for consumers that list every extension.
+ */
+function buildInstallFailureRecords(
+  failures: readonly PackageInstallFailure[],
+): RuntimeExtensionRecord[] {
+  const seen = new Set<string>();
+  const records: RuntimeExtensionRecord[] = [];
+  for (const failure of failures) {
+    if (seen.has(failure.source)) {
+      continue;
+    }
+    seen.add(failure.source);
+    records.push({
+      path: failure.source,
+      displayName: failure.source,
+      description: "Failed to install. Its extensions, skills and tools are unavailable.",
+      enabled: false,
+      sourceInfo: {
+        path: failure.source,
+        source: failure.source,
+        scope: "temporary",
+        origin: "package",
+      },
+      commands: [],
+      tools: [],
+      flags: [],
+      flagDetails: [],
+      shortcuts: [],
+      diagnostics: [
+        { type: "error", message: formatPackageInstallFailure(failure), path: failure.source },
+      ],
+      installFailed: true,
+    });
+  }
+  return records;
+}
+
+function formatPackageInstallFailure(failure: PackageInstallFailure): string {
+  const where = failure.scope === "temporary" ? "" : ` (${failure.scope} settings)`;
+  return `Package "${failure.source}"${where} failed to install and was skipped: ${failure.message}\nIt is retried the next time resources reload. Remove it from settings.json to stop retrying.`;
+}
+
 function extensionPathKey(path: string): string {
   return isBuiltinExtensionPath(path) ? path : resolve(path);
 }

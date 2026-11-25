@@ -6,6 +6,8 @@ import {
   createAgentSessionServices,
   getAgentDir,
   type AgentSessionRuntime,
+  type AgentSessionRuntimeDiagnostic,
+  type AgentSessionServices,
   type CreateAgentSessionOptions,
   type CreateAgentSessionServicesOptions,
   type CreateAgentSessionRuntimeResult,
@@ -33,6 +35,17 @@ export interface PiCreateAgentSessionOptions extends CreateAgentSessionOptions {
    * `createAgentSessionFromServices` for. Ignored when `model` is set.
    */
   readonly resolveInitialModel?: (modelRuntime: ModelRuntime) => PiModelInfo | undefined;
+}
+
+/**
+ * Electron has no terminal for git/npm to write to or prompt on, so capture package command output
+ * by default: a failed install then reports why, and git and ssh fail instead of waiting for
+ * credentials nobody can enter. A caller's own `packageCommandOutput` wins.
+ */
+function withCapturedPackageOutput(
+  options: PiResourceLoaderOptions | undefined,
+): PiResourceLoaderOptions {
+  return { packageCommandOutput: "capture", ...options };
 }
 
 export function isGlobalNpmLookupError(error: unknown): boolean {
@@ -85,9 +98,7 @@ async function createAgentSessionServicesWithNpmFallback(
       agentDir,
       ...(options?.settingsManager ? { settingsManager: options.settingsManager } : {}),
       ...(options?.modelRuntime ? { modelRuntime: options.modelRuntime } : {}),
-      ...(options?.resourceLoaderOptions
-        ? { resourceLoaderOptions: options.resourceLoaderOptions }
-        : {}),
+      resourceLoaderOptions: withCapturedPackageOutput(options?.resourceLoaderOptions),
       ...(options?.extensionFlagValues ? { extensionFlagValues: options.extensionFlagValues } : {}),
     });
   } catch (error) {
@@ -113,12 +124,24 @@ async function createAgentSessionServicesWithNpmFallback(
       agentDir,
       settingsManager: fallbackSettingsManager,
       ...(options?.modelRuntime ? { modelRuntime: options.modelRuntime } : {}),
-      ...(options?.resourceLoaderOptions
-        ? { resourceLoaderOptions: options.resourceLoaderOptions }
-        : {}),
+      resourceLoaderOptions: withCapturedPackageOutput(options?.resourceLoaderOptions),
       ...(options?.extensionFlagValues ? { extensionFlagValues: options.extensionFlagValues } : {}),
     });
   }
+}
+
+/**
+ * pi 1.6 skips a package that fails to install instead of throwing, and reports it only as an
+ * extension warning on the resource loader. Forward those so the session surfaces them like pi's
+ * other load diagnostics.
+ */
+function packageInstallDiagnostics(
+  services: AgentSessionServices,
+): AgentSessionRuntimeDiagnostic[] {
+  return (services.resourceLoader.getExtensions().warnings ?? []).map(({ path, warning }) => ({
+    type: "warning",
+    message: `${path}: ${warning}`,
+  }));
 }
 
 async function createAgentSessionResultWithNpmFallback(
@@ -141,7 +164,7 @@ async function createAgentSessionResultWithNpmFallback(
       ...(options?.customTools ? { customTools: options.customTools } : {}),
     })),
     services,
-    diagnostics: services.diagnostics,
+    diagnostics: [...services.diagnostics, ...packageInstallDiagnostics(services)],
   };
 }
 

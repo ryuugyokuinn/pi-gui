@@ -280,6 +280,8 @@ function buildExtensionMentionOptions(
   pendingEnablePaths: ReadonlySet<string>,
 ): MentionOption[] {
   return extensions
+    // Placeholders for packages that failed to install cannot be enabled or mentioned.
+    .filter((extension) => !extension.installFailed)
     .map((extension) => ({
       extension,
       insertText: extensionMentionText(extension),

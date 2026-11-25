@@ -91,6 +91,12 @@ export interface RuntimeExtensionRecord {
   readonly flagDetails: readonly RuntimeExtensionFlag[];
   readonly shortcuts: readonly string[];
   readonly diagnostics: readonly RuntimeExtensionDiagnostic[];
+  /**
+   * Set on a placeholder record for a package pi skipped because installing it failed. It has no
+   * extension file, so it cannot be enabled, disabled or opened; UIs should list it as a failure
+   * only and keep it out of anything that offers those actions (for example the @ mention menu).
+   */
+  readonly installFailed?: boolean;
 }
 
 export interface RuntimeCommandRecord {
