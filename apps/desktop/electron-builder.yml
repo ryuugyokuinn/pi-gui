@@ -16,10 +16,11 @@ files:
     to: node_modules/proper-lockfile/node_modules/retry
     filter:
       - "**/*"
-  # The collector nests the newer SSO under Bedrock. Its token provider must
-  # stay below SSO: Bedrock itself pins a different token-provider version.
+  # The collector drops SSO's nested token provider in the hoisted layout. It must
+  # stay below SSO: the root token-providers is Bedrock's exact pin (3.1127.0),
+  # while SSO pins a different exact version.
   - from: ../../node_modules/@aws-sdk/credential-provider-sso/node_modules/@aws-sdk/token-providers
-    to: node_modules/@aws-sdk/client-bedrock-runtime/node_modules/@aws-sdk/credential-provider-sso/node_modules/@aws-sdk/token-providers
+    to: node_modules/@aws-sdk/credential-provider-sso/node_modules/@aws-sdk/token-providers
     filter:
       - "**/*"
 
