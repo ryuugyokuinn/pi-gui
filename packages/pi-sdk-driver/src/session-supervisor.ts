@@ -60,6 +60,7 @@ import {
   type BuiltinExtension,
   type BuiltinExtensionEnabled,
 } from "./builtin-extensions.js";
+import { resolveSessionDir } from "./session-dir.js";
 import { piAddonExtensions } from "./pi-addon-extensions.js";
 import {
   acquireLeaseFile,
@@ -371,6 +372,15 @@ export class SessionSupervisor {
   }
 
   /**
+   * The session directory pi itself would use for `cwd` (env var, then the
+   * `sessionDir` setting), or undefined for pi's per-cwd default. Pass it to
+   * every `SessionManager` call that creates, lists, opens or forks sessions.
+   */
+  private sessionDirFor(cwd: string): string | undefined {
+    return resolveSessionDir(cwd, this.agentDir);
+  }
+
+  /**
    * Options every session creation shares.
    *
    * Deliberately no `modelRuntime`: letting `createAgentSessionServices` build
@@ -490,7 +500,7 @@ export class SessionSupervisor {
   }
 
   private async syncWorkspaceNow(workspace: WorkspaceRef): Promise<SyncWorkspaceResult> {
-    const infos = await SessionManager.list(workspace.path);
+    const infos = await SessionManager.list(workspace.path, this.sessionDirFor(workspace.path));
     const existingSessions = (await this.catalogs.sessions.listSessions(workspace.workspaceId))
       .sessions;
     const existingByKey = new Map(
@@ -685,6 +695,7 @@ export class SessionSupervisor {
       throw new Error(`Session ${sessionKey(sessionRef)} has no tracked session file.`);
     }
 
+    // Read-only: the session dir only matters for /new and branching, which never happen here.
     const sessionManager = SessionManager.open(sessionFile);
     return transcriptFromSession(sessionManager, sessionEntry?.updatedAt);
   }
@@ -727,7 +738,7 @@ export class SessionSupervisor {
     if (!workspace) {
       return undefined;
     }
-    const infos = await SessionManager.list(workspace.path);
+    const infos = await SessionManager.list(workspace.path, this.sessionDirFor(workspace.path));
     return infos.find((info) => info.id === sessionRef.sessionId)?.path;
   }
 
@@ -757,7 +768,7 @@ export class SessionSupervisor {
     const createOptions: PiCreateAgentSessionOptions = {
       ...this.baseCreateOptions(
         workspace,
-        SessionManager.create(workspace.path),
+        SessionManager.create(workspace.path, this.sessionDirFor(workspace.path)),
         options?.extensionFlagValues,
       ),
       ...(initialModel
@@ -865,17 +876,27 @@ export class SessionSupervisor {
     let branchedManager: SessionManager;
     if (!targetLeafId) {
       // Forking before the first user message: start a fresh empty session in the target.
-      branchedManager = SessionManager.create(targetWorkspace.path);
+      branchedManager = SessionManager.create(
+        targetWorkspace.path,
+        this.sessionDirFor(targetWorkspace.path),
+      );
       branchedManager.newSession({ parentSession: sourceFile });
     } else if (sameWorkspace) {
-      const opened = SessionManager.open(sourceFile);
+      const opened = SessionManager.open(
+        sourceFile,
+        this.sessionDirFor(sourceRecord.workspace.path),
+      );
       const forkedPath = opened.createBranchedSession(targetLeafId);
       if (!forkedPath) {
         throw new Error(`Failed to create forked session from ${sessionKey(sourceRef)}.`);
       }
       branchedManager = opened;
     } else {
-      const forked = SessionManager.forkFrom(sourceFile, targetWorkspace.path);
+      const forked = SessionManager.forkFrom(
+        sourceFile,
+        targetWorkspace.path,
+        this.sessionDirFor(targetWorkspace.path),
+      );
       const fullForkPath = forked.getSessionFile();
       let forkedPath: string | undefined;
       try {
@@ -1777,7 +1798,7 @@ export class SessionSupervisor {
       runtime = await this.createAgentSessionRuntimeImpl(
         this.baseCreateOptions(
           workspace,
-          SessionManager.open(sessionFile),
+          SessionManager.open(sessionFile, this.sessionDirFor(workspace.path)),
           this.extensionFlagValuesForSession?.(sessionRef),
         ),
       );

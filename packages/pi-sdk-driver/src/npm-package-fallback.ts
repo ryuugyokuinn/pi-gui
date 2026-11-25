@@ -13,6 +13,7 @@ import {
   type CreateAgentSessionRuntimeResult,
   type ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
+import { resolveSessionDir } from "./session-dir.js";
 
 export type PiResourceLoaderOptions = NonNullable<
   CreateAgentSessionServicesOptions["resourceLoaderOptions"]
@@ -173,7 +174,8 @@ export async function createAgentSessionRuntimeWithNpmFallback(
 ): Promise<AgentSessionRuntime> {
   const cwd = options?.cwd ?? process.cwd();
   const agentDir = options?.agentDir ?? getAgentDir();
-  const initialSessionManager = options?.sessionManager ?? SessionManager.create(cwd);
+  const initialSessionManager =
+    options?.sessionManager ?? SessionManager.create(cwd, resolveSessionDir(cwd, agentDir));
   const {
     cwd: _optionCwd,
     agentDir: _optionAgentDir,
