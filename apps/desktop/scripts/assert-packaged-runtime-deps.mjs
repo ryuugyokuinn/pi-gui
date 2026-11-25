@@ -105,7 +105,14 @@ const notificationHelperPath =
     : undefined;
 const pnpmBinary = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const piCodingAgentPackageName = "@earendil-works/pi-coding-agent";
-const requiredPiCodingAgentVersion = "1.4.0";
+// The packaged pi must satisfy the range the desktop app declares, so a pi bump
+// only needs the package.json change.
+const requiredPiCodingAgentRange = JSON.parse(
+  readFileSync(path.join(desktopDir, "package.json"), "utf8"),
+).dependencies?.[piCodingAgentPackageName];
+if (!requiredPiCodingAgentRange) {
+  throw new Error(`apps/desktop/package.json does not declare ${piCodingAgentPackageName}.`);
+}
 const modelChecks = [
   ...["openai", "openai-codex", "github-copilot"].flatMap((provider) =>
     ["sol", "luna"].map((variant) => ({
@@ -306,9 +313,9 @@ async function verifyPackagedPiRuntime(extractedDir) {
     "package.json",
   );
   const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-  if (packageJson.version !== requiredPiCodingAgentVersion) {
+  if (!semver.satisfies(packageJson.version, requiredPiCodingAgentRange)) {
     throw new Error(
-      `Packaged app has ${piCodingAgentPackageName} ${packageJson.version}; expected ${requiredPiCodingAgentVersion}.`,
+      `Packaged app has ${piCodingAgentPackageName} ${packageJson.version}; expected ${requiredPiCodingAgentRange}.`,
     );
   }
 

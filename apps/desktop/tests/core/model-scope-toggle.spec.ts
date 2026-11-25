@@ -45,7 +45,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expectComposerModelState(window, {
       activeModel: "openai:gpt-5",
       visibleModelLabels: ["GPT-5", "GPT-4o"],
-      hiddenModelLabels: ["GPT-4 Turbo"],
+      hiddenModelLabels: ["GPT-4.1"],
     });
 
     await createNamedThread(window, "Repo B global session", {
@@ -55,7 +55,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expectComposerModelState(window, {
       activeModel: "openai:gpt-5",
       visibleModelLabels: ["GPT-5", "GPT-4o"],
-      hiddenModelLabels: ["GPT-4 Turbo"],
+      hiddenModelLabels: ["GPT-4.1"],
     });
 
     await openSettings(window);
@@ -75,7 +75,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await settingsWorkspacePicker(window).selectOption({ label: rootWorkspaceA.name });
     await expect(settingsWorkspacePicker(window)).toHaveValue(rootWorkspaceA.id);
     await expect(window.getByLabel("Default model", { exact: true })).toHaveValue("openai:gpt-5");
-    await setEnabledModels(window, ["openai/gpt-4o", "openai/gpt-4-turbo"], ["openai/gpt-5"]);
+    await setEnabledModels(window, ["openai/gpt-4o", "openai/gpt-4.1"], ["openai/gpt-5"]);
     await window.getByLabel("Default model", { exact: true }).selectOption("openai:gpt-4o");
     await expect(window.getByLabel("Default model", { exact: true })).toHaveValue("openai:gpt-4o");
 
@@ -87,7 +87,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expectComposerModelState(window, {
       activeModel: "openai:gpt-5",
       visibleModelLabels: ["GPT-5", "GPT-4o"],
-      hiddenModelLabels: ["GPT-4 Turbo"],
+      hiddenModelLabels: ["GPT-4.1"],
     });
 
     await startThreadViaIpc(window, {
@@ -100,7 +100,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expect(window.locator(".chat-header__title")).toHaveText("New thread");
     await expectComposerModelState(window, {
       activeModel: "openai:gpt-4o",
-      visibleModelLabels: ["GPT-4o", "GPT-4 Turbo"],
+      visibleModelLabels: ["GPT-4o", "GPT-4.1"],
       hiddenModelLabels: ["GPT-5"],
     });
 
@@ -108,14 +108,14 @@ test("switches between app-global and per-repo model scope while worktrees inher
     await expect(window.locator(".new-thread__workspace")).toHaveValue(rootWorkspaceA.id);
     await expectNewThreadModelState(window, {
       activeModel: "openai:gpt-4o",
-      visibleModelLabels: ["GPT-4o", "GPT-4 Turbo"],
+      visibleModelLabels: ["GPT-4o", "GPT-4.1"],
       hiddenModelLabels: ["GPT-5"],
     });
     await window.locator(".session-row--active .session-row__select").first().click();
     await expect(window.getByTestId("new-thread-composer")).toHaveCount(0);
 
-    await selectComposerModel(window, "GPT-4 Turbo");
-    await expect(window.getByRole("button", { name: "openai:gpt-4-turbo" }).first()).toBeVisible();
+    await selectComposerModel(window, "GPT-4.1");
+    await expect(window.getByRole("button", { name: "openai:gpt-4.1" }).first()).toBeVisible();
 
     await openSettings(window);
     await openSettingsSection(window, "Models");
@@ -125,14 +125,14 @@ test("switches between app-global and per-repo model scope while worktrees inher
         (text) => !/Worktree/i.test(text),
       ),
     ).toBeTruthy();
-    await setEnabledModels(window, ["openai/gpt-5", "openai/gpt-4-turbo"], ["openai/gpt-4o"]);
+    await setEnabledModels(window, ["openai/gpt-5", "openai/gpt-4.1"], ["openai/gpt-4o"]);
     await window.getByLabel("Default model", { exact: true }).selectOption("openai:gpt-5");
     await expect(window.getByLabel("Default model", { exact: true })).toHaveValue("openai:gpt-5");
 
     await window.getByRole("button", { name: "Back to app", exact: true }).click();
-    await expect(window.getByRole("button", { name: "openai:gpt-4-turbo" }).first()).toBeVisible();
+    await expect(window.getByRole("button", { name: "openai:gpt-4.1" }).first()).toBeVisible();
     await expectComposerModelOptions(window, {
-      visibleModelLabels: ["GPT-5", "GPT-4 Turbo"],
+      visibleModelLabels: ["GPT-5", "GPT-4.1"],
       hiddenModelLabels: ["GPT-4o"],
     });
 
@@ -141,7 +141,7 @@ test("switches between app-global and per-repo model scope while worktrees inher
     const optionsMenu = window.getByTestId("slash-options-menu");
     await expect(optionsMenu).toBeVisible();
     await expect(optionsMenu).toContainText("GPT-5");
-    await expect(optionsMenu).toContainText("GPT-4 Turbo");
+    await expect(optionsMenu).toContainText("GPT-4.1");
     await expect(optionsMenu).not.toContainText("GPT-4o");
   } finally {
     await harness.close();

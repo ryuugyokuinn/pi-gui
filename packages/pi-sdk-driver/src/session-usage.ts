@@ -106,7 +106,8 @@ function promptCache(
 }
 
 /**
- * Mirrors pi's `getPromptCacheTtlMs`, which pi does not export. AgentSession
+ * Mirrors `getPromptCacheTtlMs` from `@earendil-works/pi-ai` (exported since 1.6.1;
+ * pi-ai is only a devDependency here, so the logic is kept local). AgentSession
  * never sets `cacheRetention`, so the tier comes from `PI_CACHE_RETENTION`.
  */
 function promptCacheTtlMs(model: SessionModel): number | undefined {

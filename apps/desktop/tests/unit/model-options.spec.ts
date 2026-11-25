@@ -43,7 +43,7 @@ test("model options list available models that pi's enabledModels scope includes
       model("anthropic", "claude", "listed"),
       model("openai", "gpt-5", "matched"),
       model("openai", "gpt-4o", "off"),
-      model("openai", "gpt-4-turbo", "matched", false),
+      model("openai", "gpt-4.1", "matched", false),
     ],
     skills: [],
     extensions: [],

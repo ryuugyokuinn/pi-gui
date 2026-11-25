@@ -31,7 +31,7 @@ test("models enabled by an enabledModels glob show in the picker and stay locked
     const dropdown = window.locator(".new-thread__hint .model-selector__dropdown").first();
     await expect(dropdown).toContainText("GPT-4o mini");
     await expect(dropdown).toContainText("GPT-5");
-    await expect(dropdown).not.toContainText("GPT-4 Turbo");
+    await expect(dropdown).not.toContainText("GPT-4.1");
     await window.keyboard.press("Escape");
 
     await window.keyboard.press(desktopShortcut(","));
@@ -47,7 +47,7 @@ test("models enabled by an enabledModels glob show in the picker and stay locked
     await expect(modelSwitch("openai/gpt-4o-mini")).toBeDisabled();
     await expect(modelSwitch("openai/gpt-5")).toBeChecked();
     await expect(modelSwitch("openai/gpt-5")).toBeEnabled();
-    await expect(modelSwitch("openai/gpt-4-turbo")).not.toBeChecked();
+    await expect(modelSwitch("openai/gpt-4.1")).not.toBeChecked();
 
     // Turning off a listed model keeps the user's glob in settings.json.
     await modelSwitch("openai/gpt-5").click();
@@ -72,7 +72,7 @@ test("app-global model settings resolve globs against the global patterns, not a
   await mkdir(join(workspacePath, ".pi"), { recursive: true });
   await writeFile(
     join(workspacePath, ".pi", "settings.json"),
-    `${JSON.stringify({ enabledModels: ["openai/gpt-4-turbo"] })}\n`,
+    `${JSON.stringify({ enabledModels: ["openai/gpt-4.1"] })}\n`,
   );
 
   const harness = await launchDesktop(userDataDir, {
@@ -89,7 +89,7 @@ test("app-global model settings resolve globs against the global patterns, not a
     const dropdown = window.locator(".new-thread__hint .model-selector__dropdown").first();
     await expect(dropdown).toContainText("GPT-4o mini");
     await expect(dropdown).toContainText("GPT-5");
-    await expect(dropdown).not.toContainText("GPT-4 Turbo");
+    await expect(dropdown).not.toContainText("GPT-4.1");
   } finally {
     await harness.close();
   }

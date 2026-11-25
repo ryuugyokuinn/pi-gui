@@ -96,10 +96,10 @@ importers:
         version: 1.0.0
       '@earendil-works/pi-coding-agent':
         specifier: ^1.6.1
-        version: 1.6.1(@smithy/signature-v4@5.6.1)(ws@8.21.3)(zod@4.3.6)
+        version: 1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(ws@8.21.3)(zod@4.3.6)
       '@google/genai':
-        specifier: 2.21.0
-        version: 2.21.0
+        specifier: 3.6.1
+        version: 3.6.1
       '@mistralai/mistralai':
         specifier: 2.2.6
         version: 2.2.6(@opentelemetry/api@1.9.0)
@@ -221,14 +221,14 @@ importers:
         specifier: ^3.0.2
         version: 3.0.2
       minimatch:
-        specifier: ^10.2.6
-        version: 10.2.6
+        specifier: ^11.0.3
+        version: 11.0.3
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
       openai:
-        specifier: 6.40.0
-        version: 6.40.0(ws@8.21.3)(zod@4.3.6)
+        specifier: 7.59.0
+        version: 7.59.0(@aws-sdk/credential-provider-node@3.972.61)(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
       parse5:
         specifier: ^5.1.1
         version: 5.1.1
@@ -278,8 +278,8 @@ importers:
         specifier: 1.3.27
         version: 1.3.27
       undici:
-        specifier: 8.5.0
-        version: 8.5.0
+        specifier: 8.12.4
+        version: 8.12.4
       which:
         specifier: ^2.0.1
         version: 2.0.2
@@ -1318,15 +1318,6 @@ packages:
   '@eslint/plugin-kit@0.7.3':
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
-
-  '@google/genai@2.21.0':
-    resolution: {integrity: sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q==}
-    engines: {node: '>=20.0.0'}
-    peerDependencies:
-      '@modelcontextprotocol/sdk': ^1.25.2
-    peerDependenciesMeta:
-      '@modelcontextprotocol/sdk':
-        optional: true
 
   '@google/genai@3.6.1':
     resolution: {integrity: sha512-DQIkZkl+VoZc+RUSaJ41vRuywjQDpP0t/oUf5/ddQhNW6JsPjVULW2EgHmuJ1mrr6ACtrmUdPlqtNXF1yfKySg==}
@@ -3926,17 +3917,6 @@ packages:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
 
-  openai@6.40.0:
-    resolution: {integrity: sha512-MWtTjd/gQt4jpbji61NTgFWJLoY/PdRJ6wG9/ZDRMYNMlBKrCrSlkLI+KgHP1vR1qT6LKSAyAqIxno6lcK9JiA==}
-    peerDependencies:
-      ws: ^8.18.0
-      zod: ^3.25 || ^4.0
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
-
   openai@7.59.0:
     resolution: {integrity: sha512-wPYKJkLPFEdNJ2tThSg4jE1Ptsv4X3u8g8LIvu0Qz/UIhsKeCzl73rl48PtQsDVrJL/ku0liXOsbyd2TsRsPJw==}
     engines: {node: '>=22.0.0'}
@@ -4620,10 +4600,6 @@ packages:
 
   undici@8.12.4:
     resolution: {integrity: sha512-8Mx+uNKKER2bA4AdtedkqRbwUCIJFr2nJckXRe5yrDqzePqwLP7VNcctN8/XdmDSbF7mS+jJKIszlL+vbam1VA==}
-    engines: {node: '>=22.19.0'}
-
-  undici@8.5.0:
-    resolution: {integrity: sha512-xamtWoB1EshgjpmlXd7GGm2VfdDtw1+rD8uhry8pSNW3If6S8E0m2T2+orSKeZXEn/aPJMviCpDBA65WJt8zhg==}
     engines: {node: '>=22.19.0'}
 
   unified@11.0.5:
@@ -5443,9 +5419,9 @@ snapshots:
     dependencies:
       esbuild: 0.28.2
 
-  '@earendil-works/pi-agent-core@1.6.1(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)':
+  '@earendil-works/pi-agent-core@1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)':
     dependencies:
-      '@earendil-works/pi-ai': 1.6.1(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
+      '@earendil-works/pi-ai': 1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
       '@earendil-works/pi-schema': 1.6.1
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -5477,7 +5453,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@1.6.1(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)':
+  '@earendil-works/pi-ai@1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.129.0(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
@@ -5488,7 +5464,7 @@ snapshots:
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
       https-proxy-agent: 9.1.0
-      openai: 7.59.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
+      openai: 7.59.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
       partial-json: 0.1.7
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -5533,10 +5509,10 @@ snapshots:
     dependencies:
       quickjs-wasi: 3.6.2
 
-  '@earendil-works/pi-coding-agent@1.6.1(@smithy/signature-v4@5.6.1)(ws@8.21.3)(zod@4.3.6)':
+  '@earendil-works/pi-coding-agent@1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(ws@8.21.3)(zod@4.3.6)':
     dependencies:
-      '@earendil-works/pi-agent-core': 1.6.1(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
-      '@earendil-works/pi-ai': 1.6.1(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
+      '@earendil-works/pi-agent-core': 1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
+      '@earendil-works/pi-ai': 1.6.1(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6)
       '@earendil-works/pi-codemode': 1.6.1
       '@earendil-works/pi-mcp': 1.6.1
       '@earendil-works/pi-tui': 1.6.1
@@ -5995,17 +5971,6 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
-
-  '@google/genai@2.21.0':
-    dependencies:
-      google-auth-library: 10.9.1
-      p-retry: 4.6.2
-      protobufjs: 7.6.6
-      ws: 8.21.3
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
 
   '@google/genai@3.6.1':
     dependencies:
@@ -9112,15 +9077,20 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@6.40.0(ws@8.21.3)(zod@4.3.6):
+  openai@7.59.0(@aws-sdk/credential-provider-node@3.972.61)(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6):
     optionalDependencies:
+      '@aws-sdk/credential-provider-node': 3.972.61
+      '@smithy/signature-v4': 5.6.1
+      google-auth-library: 10.9.1
+      undici: 8.12.4
       ws: 8.21.3
       zod: 4.3.6
 
-  openai@7.59.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.6.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6):
+  openai@7.59.0(@aws-sdk/credential-provider-node@3.972.82)(@smithy/signature-v4@5.6.1)(google-auth-library@10.9.1)(undici@8.12.4)(ws@8.21.3)(zod@4.3.6):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.82
       '@smithy/signature-v4': 5.6.1
+      google-auth-library: 10.9.1
       undici: 8.12.4
       ws: 8.21.3
       zod: 4.3.6
@@ -9336,7 +9306,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.2
-      '@types/node': 22.19.15
+      '@types/node': 24.12.2
       long: 5.3.2
 
   proxy-agent-negotiate@1.1.0: {}
@@ -9865,8 +9835,6 @@ snapshots:
   undici-types@8.9.0: {}
 
   undici@8.12.4: {}
-
-  undici@8.5.0: {}
 
   unified@11.0.5:
     dependencies:
