@@ -3,7 +3,7 @@ import { sessionKey } from "@pi-gui/session-driver";
 import type { ExtensionFlagValues, SessionSchemaInfo } from "@pi-gui/session-driver";
 import type { BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { join, resolve, sep } from "node:path";
 import {
@@ -410,7 +410,6 @@ export class DesktopAppStore {
         this.beginRuntimeCommandExecution(sessionRef, command),
       finishRuntimeCommandExecution: (sessionRef, timestamp) =>
         this.finishRuntimeCommandExecution(sessionRef, timestamp),
-      clearExtensionUiForSession: (sessionRef) => this.clearExtensionUiForSession(sessionRef),
       persistComposerAttachments: (key, attachments) =>
         this.persistComposerAttachments(key, attachments),
       schedulePersistUiState: () => this.schedulePersistUiState(),
@@ -2847,6 +2846,18 @@ export class DesktopAppStore {
     if (previous && previous.mtimeMs === current.mtimeMs && previous.size === current.size) {
       return;
     }
+    // pi appends cache-warming usage entries to an idle session's file itself; that is not an
+    // external write, so take the new stat as the baseline instead of reloading.
+    if (
+      previous &&
+      (await onlyCacheWarmEntriesAppended(current.path, previous.size, current.size))
+    ) {
+      this.selectedTranscriptFileStats.set(sessionKey(selected), {
+        mtimeMs: current.mtimeMs,
+        size: current.size,
+      });
+      return;
+    }
     // reloadTranscriptFromDriver re-records the baseline, so a later unchanged
     // focus is a no-op.
     await this.reloadTranscriptFromDriver(selected);
@@ -2854,7 +2865,9 @@ export class DesktopAppStore {
 
   private async statSelectedTranscriptFile(
     sessionRef: SessionRef,
-  ): Promise<{ readonly mtimeMs: number; readonly size: number } | undefined> {
+  ): Promise<
+    { readonly path: string; readonly mtimeMs: number; readonly size: number } | undefined
+  > {
     let path: string | undefined;
     try {
       path = await this.driver.getSessionFilePath(sessionRef);
@@ -2866,7 +2879,7 @@ export class DesktopAppStore {
     }
     try {
       const stats = await stat(path);
-      return { mtimeMs: stats.mtimeMs, size: stats.size };
+      return { path, mtimeMs: stats.mtimeMs, size: stats.size };
     } catch {
       return undefined;
     }
@@ -2876,7 +2889,7 @@ export class DesktopAppStore {
     const stats = await this.statSelectedTranscriptFile(sessionRef);
     const key = sessionKey(sessionRef);
     if (stats) {
-      this.selectedTranscriptFileStats.set(key, stats);
+      this.selectedTranscriptFileStats.set(key, { mtimeMs: stats.mtimeMs, size: stats.size });
     } else {
       this.selectedTranscriptFileStats.delete(key);
     }
@@ -3210,17 +3223,6 @@ export class DesktopAppStore {
     }
 
     return pending;
-  }
-
-  clearExtensionUiForSession(sessionRef: SessionRef): void {
-    const key = sessionKey(sessionRef);
-    if (!this.sessionState.extensionUiBySession.has(key)) {
-      return;
-    }
-
-    this.clearExtensionDialogTimeoutsForSession(sessionRef);
-    this.sessionState.extensionUiBySession.delete(key);
-    this.state = this.syncDerivedSessionState(this.state, sessionRef);
   }
 
   private async refreshSessionCommandsForWorkspace(workspaceId: string): Promise<void> {
@@ -4963,6 +4965,50 @@ async function statMtimeMs(path: string): Promise<number | undefined> {
     return (await stat(path)).mtimeMs;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Whether the bytes a session file gained since `fromSize` are only pi's own `cache_warm` usage
+ * entries (whole JSONL lines). Anything else, a partial line included, reads as an external write.
+ */
+async function onlyCacheWarmEntriesAppended(
+  path: string,
+  fromSize: number,
+  toSize: number,
+): Promise<boolean> {
+  const length = toSize - fromSize;
+  // A warm-up entry is small; a large delta is somebody else's write.
+  if (length <= 0 || length > 64 * 1024) {
+    return false;
+  }
+  try {
+    const handle = await open(path, "r");
+    try {
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, fromSize);
+      const appended = buffer.subarray(0, bytesRead).toString("utf8");
+      if (bytesRead !== length || !appended.endsWith("\n")) {
+        return false;
+      }
+      const lines = appended.split("\n").filter((line) => line.trim().length > 0);
+      return (
+        lines.length > 0 &&
+        lines.every((line) => {
+          const entry: unknown = JSON.parse(line);
+          return (
+            typeof entry === "object" &&
+            entry !== null &&
+            (entry as { type?: unknown }).type === "usage" &&
+            (entry as { kind?: unknown }).kind === "cache_warm"
+          );
+        })
+      );
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return false;
   }
 }
 

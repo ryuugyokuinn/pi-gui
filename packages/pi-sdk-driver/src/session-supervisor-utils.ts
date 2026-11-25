@@ -903,6 +903,20 @@ export function shouldTailFromDisk(input: {
 }
 
 /**
+ * Whether the transcript file grew by exactly one entry pi just appended: its JSON line, as pi
+ * persists it, accounts for the whole difference from the size last reconciled. Growth by
+ * anything else (an external writer) does not match, so it still reads as an external append.
+ */
+export function transcriptGrewByEntry(
+  baselineSizeBytes: number | undefined,
+  diskSizeBytes: number,
+  entry: object,
+): boolean {
+  if (baselineSizeBytes === undefined) return false;
+  return diskSizeBytes === baselineSizeBytes + Buffer.byteLength(`${JSON.stringify(entry)}\n`);
+}
+
+/**
  * Deduplicate concurrent async work by `key`. While a call for `key` is in
  * flight, later callers receive the same promise instead of starting a second
  * `factory` run, so exactly one result is produced. The entry is removed once

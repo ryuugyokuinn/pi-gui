@@ -9,6 +9,7 @@ import {
   persistedToolOutput,
   shouldPersistSnapshotForAgentEvent,
   transcriptFromMessages,
+  transcriptGrewByEntry,
 } from "../dist/session-supervisor-utils.js";
 
 const markdownParts = [
@@ -203,4 +204,14 @@ await test("a stopped reply reads as stopped only while it is still the newest r
   // A newer reply, from this app or pi run elsewhere, or another branch, decides on its own.
   branch.push({ type: "message", id: "a2", message: reply });
   assert.equal(sessionRunOutcome({ session, stoppedReplyId: "a1" }), "completed");
+});
+
+await test("transcriptGrewByEntry accepts growth by exactly the appended entry's line", () => {
+  const entry = { type: "usage", kind: "cache_warm", note: "é" };
+  const line = Buffer.byteLength(`${JSON.stringify(entry)}\n`);
+  assert.equal(transcriptGrewByEntry(1_000, 1_000 + line, entry), true);
+  // Anything more or less than the entry (an external append, a stale baseline) does not match.
+  assert.equal(transcriptGrewByEntry(1_000, 1_000 + line + 40, entry), false);
+  assert.equal(transcriptGrewByEntry(1_000, 1_000 + line - 1, entry), false);
+  assert.equal(transcriptGrewByEntry(undefined, 1_000 + line, entry), false);
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -172,6 +172,7 @@ async function startHarness(t: test.TestContext) {
     loadGate,
     promptHook,
     session: () => runtime.session,
+    runtime: () => runtime,
   };
 }
 
@@ -352,4 +353,97 @@ await test("a reload asked for while an extension command is starting waits for 
   commandGate.current.open();
   await sent;
   await waitFor(() => state.loads === loadsAtStart + 1, "the deferred reload after the command");
+});
+
+await test("a reload pi refuses mid-turn leaves the extension UI alone", async (t) => {
+  const { driver, ref, state, session } = await startHarness(t);
+  const resets: string[] = [];
+  const unsubscribe = driver.subscribe(ref, (event) => {
+    if (event.type === "hostUiRequest" && event.request.kind === "reset") {
+      resets.push(event.request.requestId);
+    }
+  });
+  t.after(unsubscribe);
+  const loadsAtStart = state.loads;
+
+  const sent = driver.sendUserMessage(ref, { text: "hello" });
+  await waitFor(() => state.streaming, "the turn to start streaming");
+  // pi throws while a response runs; the extensions stay loaded, so their UI must stay too.
+  await assert.rejects(driver.reloadSession(ref), /Wait for the current response to finish/);
+  await settle();
+  assert.equal(resets.length, 0, "no reset was sent for a reload that did not happen");
+  assert.equal(state.loads, loadsAtStart, "the extensions were not reloaded");
+
+  state.turnGate.open();
+  await sent;
+  await session().waitForIdle();
+  await driver.reloadSession(ref);
+  await settle();
+  assert.equal(resets.length, 1, "a reload that runs resets the extension UI once");
+  assert.equal(state.loads, loadsAtStart + 1);
+});
+
+await test("pi's own cache-warm append to an idle session file is not an external append", async (t) => {
+  const { driver, ref, state, session } = await startHarness(t);
+  const sent = driver.sendUserMessage(ref, { text: "hello" });
+  await waitFor(() => state.streaming, "the turn to start streaming");
+  state.turnGate.open();
+  await sent;
+  await session().waitForIdle();
+  // Reopening captures the disk-tail baseline against the file the turn wrote.
+  await driver.closeSession(ref);
+  await driver.openSession(ref);
+
+  const supervisor = (
+    driver as unknown as {
+      supervisor: { readTranscriptFromDisk: (sessionRef: typeof ref) => Promise<unknown> };
+    }
+  ).supervisor;
+  const readFromDisk = t.mock.method(supervisor, "readTranscriptFromDisk");
+  await driver.getTranscript(ref);
+  assert.equal(readFromDisk.mock.callCount(), 0, "an untouched file is served from memory");
+
+  // What pi's cache warmer does: append a usage entry, then announce it.
+  const warm = session();
+  const entry = warm.sessionManager.appendUsage("cache_warm", "reload-test", "scripted", {
+    input: 1,
+    output: 1,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 2,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  });
+  (warm as unknown as { _emit: (event: unknown) => void })._emit({ type: "entry_appended", entry });
+  await settle();
+  await driver.getTranscript(ref);
+  assert.equal(readFromDisk.mock.callCount(), 0, "the warm-up entry is this session's own write");
+
+  // Anything else growing the file is still an external append.
+  const sessionFile = await driver.getSessionFilePath(ref);
+  assert.ok(sessionFile);
+  await appendFile(sessionFile, `${JSON.stringify({ type: "label", id: "ext0001" })}\n`);
+  await driver.getTranscript(ref);
+  assert.equal(readFromDisk.mock.callCount(), 1, "an external append is read back from disk");
+});
+
+await test("diagnostics pi collects when it replaces the session reach the app once", async (t) => {
+  const { driver, ref, runtime } = await startHarness(t);
+  const notices: string[] = [];
+  const unsubscribe = driver.subscribe(ref, (event) => {
+    if (event.type === "hostUiRequest" && event.request.kind === "notify") {
+      notices.push(event.request.message);
+    }
+  });
+  t.after(unsubscribe);
+
+  // pi hands out each diagnostic once; here a replacement (/new, /fork, /resume) produced one.
+  const diagnostic = { type: "warning" as const, message: "project extension failed to load" };
+  t.mock.method(runtime(), "takeUnreportedDiagnostics", () => [diagnostic], { times: 1 });
+  await driver.reloadSession(ref);
+  await settle();
+  assert.deepEqual(notices, [diagnostic.message]);
+
+  await driver.reloadSession(ref);
+  await settle();
+  assert.deepEqual(notices, [diagnostic.message], "a diagnostic already reported is not repeated");
 });

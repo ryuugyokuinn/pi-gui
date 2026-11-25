@@ -782,3 +782,44 @@ await test(
     }
   },
 );
+
+await test(
+  "removing a workspace mid-turn captures the aborted turn as interrupted",
+  { timeout: 15000 },
+  async (t) => {
+    const started = gate();
+    const h = await fixture(t, (model, _context, options) => {
+      const stream = createAssistantMessageEventStream();
+      const partial: AssistantMessage = {
+        role: "assistant",
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "aborted",
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "start", partial });
+      // The reply never ends until pi's dispose aborts it.
+      options?.signal?.addEventListener("abort", () =>
+        stream.push({ type: "error", reason: "aborted", error: partial }),
+      );
+      started.release();
+      return stream;
+    });
+    const sending = h.send().catch(() => undefined);
+    await started.promise;
+    await h.driver.removeWorkspace("capture-workspace");
+    await sending;
+    assert.equal(h.closings().length, 1);
+    assert.equal(h.closings()[0]!.event.closing!.outcome, "interrupted");
+  },
+);

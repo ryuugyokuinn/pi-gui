@@ -106,6 +106,7 @@ import {
   titleFromSessionInfo,
   toSessionErrorInfo,
   transcriptFromMessages,
+  transcriptGrewByEntry,
   transcriptFromSession,
   transcriptItemFromCardEntry,
   transcriptItemFromPinEntry,
@@ -277,6 +278,8 @@ interface ManagedSessionRecord {
   leasePath: string | undefined;
   /** mtime (epoch ms) of the JSONL last reconciled into the served transcript. */
   transcriptDiskMtimeMs: number | undefined;
+  /** Size in bytes of the JSONL at that same point. */
+  transcriptDiskSizeBytes: number | undefined;
   /** Custom message entries already sent as live transcript items. */
   appendedCustomEntryIds: Set<string>;
   /** A reload asked for while a turn or compaction ran; it runs once the session is idle. */
@@ -567,6 +570,9 @@ export class SessionSupervisor {
         continue;
       }
 
+      // pi's dispose aborts a running turn before session_shutdown; closed marks that turn as
+      // interrupted rather than as the stopped run it reports.
+      record.closed = true;
       record.unsubscribeAgent?.();
       record.unsubscribeAgent = undefined;
       record.listeners.clear();
@@ -635,6 +641,8 @@ export class SessionSupervisor {
           continue;
         }
 
+        // As in syncWorkspace: a turn aborted by dispose counts as interrupted.
+        record.closed = true;
         record.unsubscribeAgent?.();
         record.unsubscribeAgent = undefined;
         record.listeners.clear();
@@ -647,16 +655,17 @@ export class SessionSupervisor {
   async getTranscript(sessionRef: SessionRef): Promise<SessionTranscriptItem[]> {
     const record = this.records.get(sessionKey(sessionRef));
     if (record && record.session && !record.closed) {
-      const diskMtimeMs = record.session.isStreaming
+      const disk = record.session.isStreaming
         ? undefined
-        : await this.statMtimeMs(record.sessionFile);
+        : await this.statTranscriptFile(record.sessionFile);
       const tail = shouldTailFromDisk({
         isStreaming: record.session.isStreaming,
-        diskMtimeMs,
+        diskMtimeMs: disk?.mtimeMs,
         baselineMtimeMs: record.transcriptDiskMtimeMs,
       });
       if (tail) {
-        record.transcriptDiskMtimeMs = diskMtimeMs;
+        record.transcriptDiskMtimeMs = disk?.mtimeMs;
+        record.transcriptDiskSizeBytes = disk?.size;
         return this.readTranscriptFromDisk(sessionRef);
       }
       return transcriptFromSession(record.session.sessionManager, record.updatedAt);
@@ -1610,8 +1619,11 @@ export class SessionSupervisor {
     const reload = previous
       .catch(() => undefined)
       .then(async () => {
-        this.resetExtensionUi(record);
-        await this.requireSession(record).reload();
+        const session = this.requireSession(record);
+        // pi refuses to reload mid-response or mid-compaction (it throws, leaving the extensions
+        // running), so only a reload that can proceed resets their UI.
+        if (!session.isStreaming && !session.isCompacting) this.resetExtensionUi(record);
+        await session.reload();
         await this.syncRecordAfterSessionMutation(record, { emitUpdate: true });
       })
       .finally(() => {
@@ -1850,6 +1862,7 @@ export class SessionSupervisor {
       usage: undefined,
       leasePath: undefined,
       transcriptDiskMtimeMs: undefined,
+      transcriptDiskSizeBytes: undefined,
       appendedCustomEntryIds: new Set(),
       reloadPending: false,
       reloadInFlight: undefined,
@@ -2044,6 +2057,8 @@ export class SessionSupervisor {
         for (const listener of existingTarget.listeners) {
           record.listeners.add(listener);
         }
+        // A turn aborted by dispose counts as interrupted.
+        existingTarget.closed = true;
         existingTarget.unsubscribeAgent?.();
         existingTarget.unsubscribeAgent = undefined;
         this.cancelPendingHostUiRequests(existingTarget);
@@ -2126,22 +2141,47 @@ export class SessionSupervisor {
 
   /** Claim the lease and capture the disk-tail baseline for the record's current file. */
   private async refreshLeaseAndTranscriptBaseline(record: ManagedSessionRecord): Promise<void> {
-    const [, mtimeMs] = await Promise.all([
+    const [, disk] = await Promise.all([
       this.acquireSessionLease(record),
-      this.statMtimeMs(record.sessionFile),
+      this.statTranscriptFile(record.sessionFile),
     ]);
-    record.transcriptDiskMtimeMs = mtimeMs;
+    record.transcriptDiskMtimeMs = disk?.mtimeMs;
+    record.transcriptDiskSizeBytes = disk?.size;
   }
 
-  private async statMtimeMs(filePath: string | undefined): Promise<number | undefined> {
+  private async statTranscriptFile(
+    filePath: string | undefined,
+  ): Promise<{ readonly mtimeMs: number; readonly size: number } | undefined> {
     if (!filePath) {
       return undefined;
     }
     try {
-      return (await stat(filePath)).mtimeMs;
+      const { mtimeMs, size } = await stat(filePath);
+      return { mtimeMs, size };
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * pi appends a cache-warming usage entry to the JSONL while the session sits idle. That write
+   * is this session's own, not an external append, so when the file grew by exactly that entry
+   * the disk-tail baseline moves with it; any other growth keeps the baseline and still tails.
+   */
+  private async absorbOwnUsageAppend(record: ManagedSessionRecord, entry: object): Promise<void> {
+    const sessionFile = record.sessionFile;
+    const disk = await this.statTranscriptFile(sessionFile);
+    if (
+      !disk ||
+      record.closed ||
+      record.sessionFile !== sessionFile ||
+      record.transcriptDiskMtimeMs === undefined ||
+      !transcriptGrewByEntry(record.transcriptDiskSizeBytes, disk.size, entry)
+    ) {
+      return;
+    }
+    record.transcriptDiskMtimeMs = disk.mtimeMs;
+    record.transcriptDiskSizeBytes = disk.size;
   }
 
   private createCommandContextActions(
@@ -2486,9 +2526,11 @@ export class SessionSupervisor {
    * pi returns what went wrong while loading a session (an unknown or valueless
    * extension flag, a provider an extension failed to register) instead of
    * throwing; terminal pi prints these at startup, so show them as extension errors.
+   * The runtime hands out each diagnostic once, so this runs after every session
+   * replacement (/new, /fork, /resume) as well as at open.
    */
   private reportLoadDiagnostics(record: ManagedSessionRecord, runtime: AgentSessionRuntime): void {
-    for (const diagnostic of runtime.diagnostics) {
+    for (const diagnostic of runtime.takeUnreportedDiagnostics()) {
       const request: NotifyHostUiRequest = {
         kind: "notify",
         requestId: crypto.randomUUID(),
@@ -2665,6 +2707,8 @@ export class SessionSupervisor {
     record.sessionCommands = this.collectSessionCommands(session);
     // Tree navigation and reloads change which branch pi counts.
     this.refreshUsage(record);
+    // A replaced session (extension newSession/fork/switchSession) collects its diagnostics anew.
+    if (record.runtime) this.reportLoadDiagnostics(record, record.runtime);
     await this.persistSnapshot(record);
     if (options.emitUpdate) {
       await this.emit(record, sessionUpdatedEvent(record));
@@ -2896,8 +2940,12 @@ export class SessionSupervisor {
         // Cache-warming refreshes land as usage entries. pi announces them
         // before rescheduling the next refresh, so read once it has.
         if (event.entry.type !== "usage") return [];
+        const usageEntry = event.entry;
         queueMicrotask(() => {
           if (record.closed) return;
+          if (usageEntry.kind === "cache_warm") {
+            void this.absorbOwnUsageAppend(record, usageEntry).catch(() => undefined);
+          }
           this.refreshUsage(record);
           this.queueDriverEvents(record, [sessionUpdatedEvent(record)], { persistSnapshot: false });
         });
@@ -3849,22 +3897,21 @@ function reconcileQueuedMessagesForStartedUserMessage(
     return undefined;
   }
 
-  const steeringIndex = record.queuedMessages.findIndex(
-    (item) => item.mode === "steer" && item.text === text,
-  );
-  if (steeringIndex !== -1) {
-    const [started] = record.queuedMessages.splice(steeringIndex, 1);
-    record.updatedAt = timestamp;
-    return started;
-  }
-
-  const followUpIndex = record.queuedMessages.findIndex(
-    (item) => item.mode === "followUp" && item.text === text,
-  );
-  if (followUpIndex !== -1) {
-    const [started] = record.queuedMessages.splice(followUpIndex, 1);
-    record.updatedAt = timestamp;
-    return started;
+  // A queued message with images can arrive with pi's image hints appended after a blank line
+  // ("<text>\n\n<hints>"), so an exact match wins and the hinted form is the fallback. Within a
+  // mode the earliest item goes first, as pi delivers each queue in order.
+  const matchers: readonly ((item: SessionQueuedMessage, mode: string) => boolean)[] = [
+    (item, mode) => item.mode === mode && item.text === text,
+    (item, mode) => item.mode === mode && text.startsWith(`${item.text}\n\n`),
+  ];
+  for (const matches of matchers) {
+    for (const mode of ["steer", "followUp"]) {
+      const index = record.queuedMessages.findIndex((item) => matches(item, mode));
+      if (index === -1) continue;
+      const [started] = record.queuedMessages.splice(index, 1);
+      record.updatedAt = timestamp;
+      return started;
+    }
   }
 
   return undefined;

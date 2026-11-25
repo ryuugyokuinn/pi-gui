@@ -53,7 +53,7 @@ type ConversationDriver = Pick<
   PiSdkDriver,
   | "cancelCurrentRun"
   | "compactSession"
-  | "reloadSession"
+  | "reloadSessionWhenIdle"
   | "renameSession"
   | "replaceQueuedMessages"
   | "sendUserMessage"
@@ -111,7 +111,6 @@ interface ConversationOwnerHost {
     sessionRef: SessionRef,
     timestamp?: string,
   ): PendingRuntimeCommandExecution | undefined;
-  clearExtensionUiForSession(sessionRef: SessionRef): void;
   persistComposerAttachments(
     key: string,
     attachments: readonly ComposerAttachment[],
@@ -960,8 +959,17 @@ async function runComposerCommand(
   }
 
   if (parsed.type === "reload") {
-    store.clearExtensionUiForSession(sessionRef);
-    await store.driver.reloadSession(sessionRef);
+    // pi refuses to reload while a response or compaction runs, so a busy thread reloads when it
+    // ends. The driver resets the thread's extension UI as it reloads; nothing is cleared here, so
+    // a reload that does not happen leaves the live extensions' UI alone.
+    if ((await store.driver.reloadSessionWhenIdle(sessionRef)) === "deferred") {
+      return finishComposerCommand(
+        store,
+        sessionRef,
+        key,
+        "Reload queued until the current response finishes",
+      );
+    }
     await store.refreshSessionCommandsFor(sessionRef);
     return finishComposerCommand(store, sessionRef, key, "Reloaded session resources");
   }
